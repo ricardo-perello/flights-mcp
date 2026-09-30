@@ -141,6 +141,7 @@ uses). `NYC` returns the metro code plus JFK and LGA. Newark is EWR.
 - For a round trip, `price` is the total Google showed for that departure and return. `legs` are the segments included in that result.
 - The price is the integer Google returned, in the currency you asked for, in major units. It is not converted or rounded. Itineraries with no usable price are omitted. If none remain, the tool errors with `unpriced`.
 - Identical searches in one process are reused for 2 minutes. The cache is memory only and includes the date window.
+- Each day contributes at most 4 itineraries to the comparison: the cheapest ones, plus that day's fastest if it was not already among them. The overall list is still capped by `max_results`, and the labeled options are kept inside that cap.
 - The whole search, including every date in the window, gets 25 seconds.
 - At most two searches run at once.
 
@@ -166,9 +167,62 @@ FLIGHTS_LIVE=1 uv run pytest tests/test_live.py -s
 
 ### Live check
 
-Recorded after the date-window parser is exercised. See the commit that
-follows a `FLIGHTS_LIVE=1` run for the fares, flight numbers, and layover
-minutes that page actually returned.
+`FLIGHTS_LIVE=1 uv run pytest tests/test_live.py` on 2026-09-30. One-way
+ZRH to BCN, departures 2026-10-26 through 2026-11-01 (seven days, all
+searched), 1 adult, economy, CHF. The call wrote nothing to stdout. Every
+priced itinerary had `carry_on` and `checked_bag` set to `unknown` and
+`fare_family` null. Nothing was filled in.
+
+Cheapest fare Google returned for each day:
+
+| Departure | Cheapest |
+| --- | --- |
+| 2026-10-26 | 63 CHF |
+| 2026-10-27 | 48 CHF |
+| 2026-10-28 | 57 CHF |
+| 2026-10-29 | 63 CHF |
+| 2026-10-30 | 69 CHF |
+| 2026-10-31 | 57 CHF |
+| 2026-11-01 | 54 CHF |
+
+The eight itineraries the tool returned (`max_results` 8), sorted by price.
+`picks` were the 48 CHF Vueling, the 54 CHF Vueling, and the 75 CHF SWISS.
+
+| Price | Date | Flight | Local times | Duration | Stops | Codeshare |
+| --- | --- | --- | --- | --- | --- | --- |
+| 48 CHF | 27 Oct | VY1229 | 21:15 → 23:10 | 1h 55m | 0 | IB5489 |
+| 54 CHF | 1 Nov | VY1227 | 09:40 → 11:30 | 1h 50m | 0 | IB5487 |
+| 57 CHF | 27 Oct | VY1227 | 09:40 → 11:30 | 1h 50m | 0 | IB5487 |
+| 57 CHF | 28 Oct | VY1227 | 09:40 → 11:30 | 1h 50m | 0 | IB5487 |
+| 57 CHF | 28 Oct | VY1229 | 21:35 → 23:30 | 1h 55m | 0 | IB5489 |
+| 57 CHF | 31 Oct | VY1229 | 21:15 → 23:10 | 1h 55m | 0 | IB5489 |
+| 63 CHF | 26 Oct | VY1227 | 09:40 → 11:30 | 1h 50m | 0 | IB5487 |
+| 75 CHF | 1 Nov | LX1954 | 12:20 → 14:05 | 1h 45m | 0 | none |
+
+Duration basis on these was `google`. The cheapest Vueling was an Airbus
+A320, with the carbon figure Google sent (83000 grams) and a booking URL.
+Fetching that booking URL from this environment returned HTTP 200 and the
+Google Flights page. It is not a held ticket. The booking token is not
+copied here.
+
+The same parser, on the 2026-10-28 page alone, also saw connections. They
+did not make the shortlist: the nonstops above were cheaper, and the SWISS
+flight was faster, so the per-day keep (cheapest plus fastest) never held
+onto them. They are recorded because the layover fields were present:
+
+| Price | Flights | Duration | Layover |
+| --- | --- | --- | --- |
+| 77 CHF | JU331, JU580 | 23h 40m | Belgrade (BEG), 1155 minutes, as Google reported |
+| 101 CHF | AF1815, AF1448 | 4h 5m | Paris (CDG), 45 minutes |
+| 138 CHF | SN2732, SN3703 | 4h 25m | Brussels (BRU), 70 minutes |
+
+Bags and fare family were absent on those connections too.
+
+Search URL for the first day of the window:
+
+<https://www.google.com/travel/flights/search?tfs=GhoSCjIwMjYtMTAtMjZqBRIDWlJIcgUSA0JDTkIBAUgBmAEC&hl=en-US&curr=CHF>
+
+Treat the tables as a snapshot from that run.
 
 ## Layout
 

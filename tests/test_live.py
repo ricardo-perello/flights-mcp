@@ -53,7 +53,7 @@ def test_live_zurich_to_barcelona_week():
     assert result.origin == "ZRH"
     assert result.destination == "BCN"
     assert result.currency == "CHF"
-    assert result.count >= 1
+    assert 1 <= result.count <= 8
     assert result.search_url.startswith("https://www.google.com/travel/flights")
     assert result.dates_searched
     assert result.dates_searched[0] >= start

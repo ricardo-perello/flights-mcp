@@ -709,19 +709,31 @@ def run_search(
         )
 
     picks = _label(pool)
-    chosen = {picks.cheapest, picks.fastest, picks.compromise}
     ordered = sorted(pool, key=lambda item: (item.price, item.duration_minutes, item.depart_date, item.id))
-    selected: list[Itinerary] = []
-    seen: set[str] = set()
+    by_id: dict[str, Itinerary] = {}
     for item in ordered:
-        if item.id in chosen or len(selected) < max_results:
-            if item.id in seen:
-                continue
-            selected.append(item)
-            seen.add(item.id)
-        if len(selected) >= max_results and chosen <= seen:
+        by_id.setdefault(item.id, item)
+    # Picks take slots first so a fast expensive flight is not pushed out by cheaper ones.
+    # The list never grows past max_results. If the cap is smaller than three distinct
+    # picks, cheapest is kept, then fastest, then compromise, and the labels are recomputed
+    # on what was actually returned.
+    chosen_ids: list[str] = []
+    for option_id in (picks.cheapest, picks.fastest, picks.compromise):
+        if option_id not in chosen_ids:
+            chosen_ids.append(option_id)
+    chosen_ids = chosen_ids[:max_results]
+    selected = [by_id[option_id] for option_id in chosen_ids]
+    seen = set(chosen_ids)
+    for item in ordered:
+        if len(selected) >= max_results:
             break
-    # Labels were applied on the pool objects, which are the same instances.
+        if item.id in seen:
+            continue
+        selected.append(item)
+        seen.add(item.id)
+    selected.sort(key=lambda item: (item.price, item.duration_minutes, item.depart_date, item.id))
+    if {picks.cheapest, picks.fastest, picks.compromise} - seen:
+        picks = _label(selected)
     notes = list(_NOTES)
     if return_date or nights is not None:
         notes.append("For a round trip, price is the total Google showed for that departure and return.")

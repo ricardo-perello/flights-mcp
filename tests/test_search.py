@@ -264,6 +264,26 @@ def test_partial_timeout_keeps_days_already_priced(monkeypatch):
     assert any(day.status == "timeout" for day in result.days)
 
 
+def test_labeled_options_stay_inside_max_results():
+    day = depart_in(21)
+
+    def fetcher(depart: str, _return: str | None) -> list[ParsedItinerary]:
+        return [
+            zurich_barcelona(depart, price=50, duration_minutes=400, flight_number="LX1956"),
+            zurich_barcelona(depart, price=80, duration_minutes=200, flight_number="LX1952"),
+            zurich_barcelona(depart, price=200, duration_minutes=90, flight_number="LX1954"),
+            zurich_barcelona(depart, price=90, duration_minutes=300, flight_number="LX1950"),
+        ]
+
+    result = _search(depart_date=day, max_results=2, fetcher=fetcher)
+    ids = {flight.id for flight in result.flights}
+    assert result.count == 2
+    assert result.picks.cheapest in ids
+    assert result.picks.fastest in ids
+    assert result.picks.compromise in ids
+    assert any(flight.price == 200 for flight in result.flights)
+
+
 def test_identical_searches_reuse_the_process_cache():
     day = depart_in(21)
     calls = {"n": 0}
