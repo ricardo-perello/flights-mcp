@@ -125,11 +125,24 @@ FLIGHTS_LIVE=1 uv run pytest tests/test_live.py -s
 
 ### Live check
 
-Recorded from a real search on this tree (not a fixture):
+`FLIGHTS_LIVE=1 uv run pytest tests/test_live.py` on 2026-09-30. One-way
+ZRH to BCN on 2026-10-28, 1 adult, economy, CHF. Six priced itineraries
+came back, and the call wrote nothing to stdout.
 
-<!-- live-check:start -->
-Not recorded yet.
-<!-- live-check:end -->
+| Price | Airline | Local times | Stops | Route |
+| --- | --- | --- | --- | --- |
+| 77 CHF | Air Serbia (JU) | 28 Oct 09:30 → 29 Oct 09:10 | 1 | ZRH–BEG–BCN |
+| 101 CHF | Air France (AF) | 28 Oct 18:50 → 22:55 | 1 | ZRH–CDG–BCN |
+| 108 CHF | SWISS (LX) | 28 Oct 07:20 → 09:05 | 0 | ZRH–BCN |
+| 108 CHF | SWISS (LX) | 28 Oct 21:10 → 23:00 | 0 | ZRH–BCN |
+| 134 CHF | SWISS (LX) | 28 Oct 12:20 → 14:05 | 0 | ZRH–BCN |
+| 138 CHF | Brussels Airlines (SN) | 28 Oct 12:25 → 16:50 | 1 | ZRH–BRU–BCN |
+
+The Google Flights URL from that response:
+
+<https://www.google.com/travel/flights/search?tfs=GhoSCjIwMjYtMTAtMjhqBRIDWlJIcgUSA0JDTkIBAUgBmAEC&hl=en-US&curr=CHF>
+
+Treat the table as a snapshot from that run.
 
 ## Layout
 
