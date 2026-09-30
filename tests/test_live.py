@@ -18,8 +18,10 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-def test_live_zurich_to_barcelona():
-    day = depart_in(28)
+def test_live_zurich_to_barcelona_week():
+    """One-way ZRH to BCN across seven days, a few weeks out, 1 adult, economy, CHF."""
+    start = depart_in(26)
+    end = depart_in(32)
     read_fd, write_fd = os.pipe()
     saved_stdout = os.dup(1)
     os.dup2(write_fd, 1)
@@ -27,11 +29,12 @@ def test_live_zurich_to_barcelona():
         result = run_search(
             origin="ZRH",
             destination="BCN",
-            depart_date=day,
+            depart_from=start,
+            depart_to=end,
             adults=1,
             cabin="economy",
             currency="CHF",
-            max_results=6,
+            max_results=8,
             nonstop=False,
             cache=None,
         )
@@ -52,13 +55,30 @@ def test_live_zurich_to_barcelona():
     assert result.currency == "CHF"
     assert result.count >= 1
     assert result.search_url.startswith("https://www.google.com/travel/flights")
-    flight = result.flights[0]
-    assert flight.price > 0
-    assert flight.airlines
-    assert flight.depart_local
-    assert flight.arrive_local
-    assert flight.stops >= 0
-    assert flight.route[0] == "ZRH"
-    assert flight.route[-1] == "BCN"
-    assert flight.legs
-    assert "flight_numbers" not in flight.model_dump()
+    assert result.dates_searched
+    assert result.dates_searched[0] >= start
+    assert result.dates_searched[-1] <= end
+    ids = {flight.id for flight in result.flights}
+    assert result.picks.cheapest in ids
+    assert result.picks.fastest in ids
+    assert result.picks.compromise in ids
+    assert any(flight.flight_numbers for flight in result.flights)
+    for flight in result.flights:
+        assert flight.price > 0
+        assert flight.airlines
+        assert flight.depart_local
+        assert flight.arrive_local
+        assert flight.stops >= 0
+        assert flight.route[0] == "ZRH"
+        assert flight.route[-1] == "BCN"
+        assert flight.legs
+        assert flight.carry_on == "unknown"
+        assert flight.checked_bag == "unknown"
+        assert flight.fare_family is None
+        assert "unknown" in flight.fare_note
+        for leg in flight.legs:
+            if leg.flight_number is None:
+                assert leg.flight_number_note
+        if flight.stops:
+            assert flight.layovers
+            assert all(stop.airport for stop in flight.layovers)

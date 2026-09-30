@@ -3,7 +3,7 @@
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from fast_flights.model import Airport, CarbonEmission, Flights, SimpleDatetime, SingleFlight
+from flights_mcp.google_parse import ParsedItinerary, ParsedLayover, ParsedLeg
 
 ZURICH = ZoneInfo("Europe/Zurich")
 
@@ -12,39 +12,119 @@ def depart_in(days: int) -> str:
     return (datetime.now(ZURICH).date() + timedelta(days=days)).isoformat()
 
 
-def _stamp(day: str, hour: int, minute: int) -> SimpleDatetime:
-    year, month, dom = (int(part) for part in day.split("-"))
-    return SimpleDatetime(date=(year, month, dom), time=(hour, minute))
-
-
-def zurich_barcelona(day: str, *, price: int | None = 108, stops: bool = False) -> Flights:
-    """A small itinerary shaped like the fast-flights model. Not a live fare."""
-    outbound = SingleFlight(
-        from_airport=Airport(name="Zurich Airport", code="ZRH"),
-        to_airport=Airport(name="Belgrade Nikola Tesla Airport", code="BEG")
-        if stops
-        else Airport(name="Josep Tarradellas Barcelona-El Prat Airport", code="BCN"),
-        departure=_stamp(day, 9, 30),
-        arrival=_stamp(day, 11, 15) if stops else _stamp(day, 11, 10),
-        duration=105 if stops else 100,
-        plane_type="Embraer 195" if stops else "Airbus A320neo",
+def _leg(
+    day: str,
+    origin: str,
+    origin_name: str,
+    destination: str,
+    destination_name: str,
+    depart: str,
+    arrive: str,
+    minutes: int,
+    flight_number: str | None,
+    airline_code: str | None,
+    airline_name: str | None,
+    aircraft: str,
+) -> ParsedLeg:
+    return ParsedLeg(
+        origin=origin,
+        origin_name=origin_name,
+        destination=destination,
+        destination_name=destination_name,
+        depart_local=f"{day}T{depart}",
+        arrive_local=f"{day}T{arrive}",
+        duration_minutes=minutes,
+        aircraft=aircraft,
+        flight_number=flight_number,
+        airline_code=airline_code,
+        airline_name=airline_name,
+        codeshare_flight_number=None,
     )
-    legs = [outbound]
+
+
+def zurich_barcelona(
+    day: str,
+    *,
+    price: int | None = 108,
+    stops: bool = False,
+    duration_minutes: int | None = None,
+    flight_number: str | None = None,
+    layover_minutes: int | None = 355,
+) -> ParsedItinerary:
+    """A small itinerary shaped like a parsed Google result. Not a live fare."""
     if stops:
-        legs.append(
-            SingleFlight(
-                from_airport=Airport(name="Belgrade Nikola Tesla Airport", code="BEG"),
-                to_airport=Airport(name="Josep Tarradellas Barcelona-El Prat Airport", code="BCN"),
-                departure=_stamp(day, 17, 10),
-                arrival=_stamp(day, 19, 50),
-                duration=160,
-                plane_type="Airbus A220-300 Passenger",
+        numbers = ["JU331", "JU580"] if flight_number is None else [flight_number, "JU580"]
+        legs = [
+            _leg(
+                day,
+                "ZRH",
+                "Zurich Airport",
+                "BEG",
+                "Belgrade Nikola Tesla Airport",
+                "09:30",
+                "11:15",
+                105,
+                numbers[0],
+                "JU",
+                "Air Serbia",
+                "Embraer 195",
+            ),
+            _leg(
+                day,
+                "BEG",
+                "Belgrade Nikola Tesla Airport",
+                "BCN",
+                "Josep Tarradellas Barcelona-El Prat Airport",
+                "17:10",
+                "19:50",
+                160,
+                numbers[1],
+                "JU",
+                "Air Serbia",
+                "Airbus A220-300 Passenger",
+            ),
+        ]
+        layovers = [
+            ParsedLayover(
+                airport="BEG",
+                airport_name="Belgrade Nikola Tesla Airport",
+                city="Belgrade",
+                minutes=layover_minutes,
             )
+        ]
+        return ParsedItinerary(
+            price=price,
+            airlines=["Air Serbia"],
+            airline_code="JU",
+            legs=legs,
+            layovers=layovers,
+            duration_minutes=duration_minutes,
+            carbon_emission_grams=270000,
+            booking_token="CjRItesttoken",
         )
-    return Flights(
-        type="JU" if stops else "LX",
+    number = "LX1956" if flight_number is None else flight_number
+    return ParsedItinerary(
         price=price,
-        airlines=["Air Serbia"] if stops else ["SWISS"],
-        flights=legs,
-        carbon=CarbonEmission(typical_on_route=200000, emission=270000 if stops else 76000),
+        airlines=["SWISS"],
+        airline_code="LX",
+        legs=[
+            _leg(
+                day,
+                "ZRH",
+                "Zurich Airport",
+                "BCN",
+                "Josep Tarradellas Barcelona-El Prat Airport",
+                "09:30",
+                "11:10",
+                100,
+                number,
+                "LX" if number else None,
+                "SWISS" if number else None,
+                "Airbus A320neo",
+            )
+        ],
+        layovers=[],
+        duration_minutes=100 if duration_minutes is None else duration_minutes,
+        carbon_emission_grams=76000,
+        booking_token="CjRItesttoken",
     )

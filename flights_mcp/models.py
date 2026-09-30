@@ -27,7 +27,11 @@ RESOLVE_LIMIT_MAX = 20
 CABINS = ("economy", "premium-economy", "business", "first")
 Cabin = Literal["economy", "premium-economy", "business", "first"]
 PlaceKind = Literal["airport", "metro"]
-DurationBasis = Literal["elapsed", "air"]
+DurationBasis = Literal["google", "elapsed", "air"]
+OptionLabel = Literal["cheapest", "fastest", "compromise"]
+BagStatus = Literal["included", "excluded", "unknown"]
+DayStatus = Literal["ok", "no_results", "unpriced", "timeout", "upstream", "skipped"]
+LayoverBasis = Literal["google", "schedule", "unknown"]
 
 ALLOWED_CURRENCIES = frozenset(get_args(Currency))
 
@@ -153,62 +157,120 @@ class FlightLeg(StrictModel):
     depart_local: str = Field(description="Local departure, YYYY-MM-DDTHH:MM, no offset.", max_length=16)
     arrive_local: str = Field(description="Local arrival, YYYY-MM-DDTHH:MM, no offset.", max_length=16)
     duration_minutes: int = Field(ge=0, le=60 * 24, description="Air time of this leg, in minutes.")
-    aircraft: str | None = Field(description="Aircraft type when the source provides one.")
+    aircraft: str | None = Field(description="Aircraft type when Google provides one. Null when it does not.")
+    airline: str | None = Field(description="Airline name on this leg, when Google provides one.")
+    airline_code: str | None = Field(description="Two-character airline code, when present.", min_length=2, max_length=2)
+    flight_number: str | None = Field(
+        description="Flight number such as LX1956. Null when Google did not send one for this leg.",
+        max_length=8,
+    )
+    flight_number_note: str | None = Field(
+        description="Set when flight_number is null, so the absence is explicit. Null when the number is present.",
+    )
+    codeshare_flight_number: str | None = Field(
+        description="Marketing or codeshare number when Google sent a second identifier. Null when it did not.",
+        max_length=8,
+    )
+
+
+class Layover(StrictModel):
+    airport: str = Field(min_length=3, max_length=3)
+    airport_name: str = Field(max_length=160)
+    city: str | None = Field(description="City name when Google included it.")
+    minutes: int | None = Field(description="Layover length. Null only when it could not be read or computed.", ge=0, le=60 * 72)
+    minutes_basis: LayoverBasis = Field(
+        description="google is the layover Google reported. schedule is the gap between the leg times Google sent.",
+    )
 
 
 class Itinerary(StrictModel):
+    id: str = Field(description="Stable id for this option inside the response.", max_length=80)
+    labels: list[OptionLabel] = Field(
+        description="cheapest, fastest, and compromise. One option can carry more than one label.",
+        max_length=3,
+    )
+    depart_date: str
+    return_date: str | None
     price: int = Field(
         ge=1,
         le=10_000_000,
-        description=(
-            "Total fare in major units of currency, as Google returned it for "
-            "this search. Not converted, rounded, or estimated."
-        ),
+        description="Total fare in major currency units, as Google returned it. Not converted or estimated.",
     )
     currency: str = Field(min_length=3, max_length=3)
-    airlines: list[str] = Field(
-        description="Airline names. This source does not provide flight numbers.",
+    airlines: list[str] = Field(max_length=6)
+    airline_code: str | None = Field(min_length=2, max_length=2)
+    flight_numbers: list[str] = Field(
+        description="Flight numbers Google sent, in leg order. Empty when none of the legs had one.",
         max_length=6,
     )
-    airline_code: str | None = Field(
-        description="Two-character airline code when the source names a single airline.",
-        min_length=2,
-        max_length=2,
-    )
-    depart_local: str = Field(description="Local departure of the first leg.", max_length=16)
-    arrive_local: str = Field(description="Local arrival of the last leg.", max_length=16)
-    duration_minutes: int = Field(ge=1, le=60 * 48)
+    depart_local: str = Field(max_length=16)
+    arrive_local: str = Field(max_length=16)
+    duration_minutes: int = Field(ge=1, le=60 * 72)
     duration_basis: DurationBasis = Field(
-        description=(
-            "elapsed is door-to-door using airport timezones. "
-            "air is the sum of airborne minutes when a timezone is missing."
-        ),
+        description="google is the trip duration from the payload. elapsed uses airport timezones. air is airborne time only.",
     )
-    duration: str = Field(description="Same duration, written like 1h 40m.", max_length=20)
-    stops: int = Field(ge=0, le=5, description="Number of stops. Zero is nonstop.")
-    route: list[str] = Field(description="Airport IATA codes in order, including the origin.", max_length=8)
+    duration: str = Field(max_length=20)
+    stops: int = Field(ge=0, le=5)
+    route: list[str] = Field(max_length=8)
     legs: list[FlightLeg] = Field(min_length=1, max_length=6)
-    search_url: str = Field(description="Google Flights search for this query.", max_length=2000)
-    carbon_emission_grams: int | None = Field(
-        description="Trip carbon estimate in grams, when Google provides one.",
-        ge=0,
+    layovers: list[Layover] = Field(
+        description="One entry per stop. Empty when the itinerary is nonstop.",
+        max_length=5,
     )
+    carry_on: BagStatus = Field(description="included, excluded, or unknown. unknown means the payload did not say.")
+    checked_bag: BagStatus
+    fare_family: str | None = Field(description="Fare brand such as Basic or Standard. Null when Google did not name one.")
+    fare_note: str = Field(description="Explicit statement of what is known about bags and fare family.")
+    search_url: str = Field(description="Google Flights search for this date.", max_length=2000)
+    booking_url: str | None = Field(
+        description="Google Flights link for this itinerary when a booking token was present. Not a confirmed ticket.",
+        max_length=2000,
+    )
+    carbon_emission_grams: int | None = Field(ge=0)
+
+
+class DayQuote(StrictModel):
+    date: str
+    return_date: str | None
+    status: DayStatus
+    cheapest_price: int | None = Field(description="Lowest priced itinerary that day. Null when the day produced none.")
+    currency: str = Field(min_length=3, max_length=3)
+    itineraries: int = Field(ge=0)
+    detail: str | None = Field(description="Why a day has no fare, when status is not ok.")
+
+
+class Picks(StrictModel):
+    cheapest: str = Field(description="Itinerary id with the lowest price.")
+    fastest: str = Field(description="Itinerary id with the shortest duration.")
+    compromise: str = Field(description="Itinerary id balancing price and duration. May match another pick when little else exists.")
 
 
 class SearchFlightsResult(StrictModel):
-    origin: str = Field(description="Resolved origin IATA or metro code.", min_length=3, max_length=3)
+    origin: str = Field(min_length=3, max_length=3)
     origin_name: str = Field(max_length=160)
-    destination: str = Field(description="Resolved destination IATA or metro code.", min_length=3, max_length=3)
+    destination: str = Field(min_length=3, max_length=3)
     destination_name: str = Field(max_length=160)
-    depart_date: str
-    return_date: str | None = Field(description="Null for a one-way search.")
+    depart_date: str | None = Field(
+        description="The depart_date argument when the search was anchored on one day, with or without flexibility. Null when the search used depart_from and depart_to.",
+    )
+    depart_from: str
+    depart_to: str
+    dates_searched: list[str] = Field(max_length=7)
+    dates_not_searched: list[str] = Field(
+        description="Dates inside the requested window that were not queried, because of the 7-date cap or the timeout.",
+        max_length=366,
+    )
+    return_date: str | None = Field(description="Fixed return date, when one was requested. Null for one-way or when nights varies the return.")
+    nights: int | None = Field(description="Length of stay applied to each departure, when requested.")
     adults: int = Field(ge=1, le=MAX_ADULTS)
     cabin: Cabin
     currency: str = Field(min_length=3, max_length=3)
     nonstop: bool
     count: int = Field(ge=1, le=MAX_RESULTS)
-    cached: bool = Field(description="True when this answer was reused from the short in-process cache.")
+    cached: bool
     source: Literal["google_flights"]
-    search_url: str = Field(max_length=2000)
+    search_url: str = Field(description="Google Flights search for the first date that was actually queried.", max_length=2000)
+    days: list[DayQuote] = Field(max_length=7)
+    picks: Picks
     flights: list[Itinerary] = Field(min_length=1, max_length=MAX_RESULTS)
-    notes: list[str] = Field(max_length=8)
+    notes: list[str] = Field(max_length=12)

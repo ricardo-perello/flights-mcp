@@ -44,10 +44,17 @@ ArgModelBase.model_config = ConfigDict(
 )
 
 INSTRUCTIONS = (
-    "Live public flight search for one adult in economy, priced in CHF, unless "
-    "you change those. Use resolve_airports to turn a city into an IATA code. "
-    "Fares are snapshots from Google Flights. Flight numbers, bags, and fare "
-    "rules are not available. Never treat a missing price as zero."
+    "Live public flight search for planning a trip. Defaults are 1 adult, "
+    "economy, CHF. Use resolve_airports to turn a city into an IATA code. "
+    "Pass depart_date, or depart_date plus flexibility_days (0 to 3), or "
+    "depart_from and depart_to for a window. At most 7 departure dates are "
+    "searched; longer windows are sampled and the omitted dates are listed. "
+    "Each option has price, duration, stops, local times, airlines, flight "
+    "numbers when Google sent them, layovers, and a search or booking URL. "
+    "picks.cheapest, picks.fastest, and picks.compromise name comparable "
+    "options. Carry-on, checked bag, and fare family are unknown: Google "
+    "does not attach them to the itinerary, so do not guess. Fares are "
+    "snapshots. Never treat a missing price as zero."
 )
 
 mcp = MCPServer(
@@ -80,10 +87,47 @@ def _refresh_input_schema(model: type) -> None:
 async def search_flights(
     origin: PlaceName,
     destination: PlaceName,
-    depart_date: FlightDate,
+    depart_date: Annotated[
+        FlightDate | None,
+        Field(
+            description=(
+                "Departure date YYYY-MM-DD. Use this, optionally with flexibility_days. "
+                "Do not combine it with depart_from and depart_to."
+            ),
+        ),
+    ] = None,
+    depart_from: Annotated[
+        FlightDate | None,
+        Field(description="First departure date of a window, inclusive. Pair with depart_to."),
+    ] = None,
+    depart_to: Annotated[
+        FlightDate | None,
+        Field(
+            description=(
+                "Last departure date of a window, inclusive. At most 7 dates are searched; "
+                "a longer window is sampled and the rest are listed as not searched."
+            ),
+        ),
+    ] = None,
+    flexibility_days: Annotated[
+        int,
+        Field(
+            ge=0,
+            le=3,
+            description="Days before and after depart_date. 0 searches that day only. Not used with a from/to window.",
+        ),
+    ] = 0,
     return_date: Annotated[
         FlightDate | None,
-        Field(description="Return date YYYY-MM-DD. Omit for a one-way trip."),
+        Field(description="Fixed return date YYYY-MM-DD. Omit for one-way. Do not combine with nights."),
+    ] = None,
+    nights: Annotated[
+        int | None,
+        Field(
+            ge=1,
+            le=30,
+            description="Stay length in nights. The return date is each departure plus this many days. Do not combine with return_date.",
+        ),
     ] = None,
     adults: Annotated[
         int,
@@ -97,11 +141,12 @@ async def search_flights(
     ] = DEFAULT_MAX_RESULTS,
     nonstop: Annotated[bool, Field(description="When true, only nonstop itineraries.")] = False,
 ) -> SearchFlightsResult:
-    """Search live public Google Flights fares.
+    """Search live public Google Flights fares across a short date window.
 
     origin and destination take an IATA code or a city name. Defaults are
-    1 adult, economy, CHF. The result price is the integer Google returned.
-    This tool does not invent a fare when the source omits one.
+    1 adult, economy, CHF. A planner can ask for one day, a few days around
+    that day, or a from/to window such as a week. The price is the integer
+    Google returned. This tool does not invent a fare, a flight number, or a bag rule.
     """
     try:
         return await asyncio.wait_for(
@@ -112,7 +157,11 @@ async def search_flights(
                     origin=origin,
                     destination=destination,
                     depart_date=depart_date,
+                    depart_from=depart_from,
+                    depart_to=depart_to,
+                    flexibility_days=flexibility_days,
                     return_date=return_date,
+                    nights=nights,
                     adults=adults,
                     cabin=cabin,
                     currency=currency,
@@ -130,6 +179,8 @@ async def search_flights(
             origin=origin,
             destination=destination,
             depart_date=depart_date,
+            depart_from=depart_from,
+            depart_to=depart_to,
         ) from exc
 
 

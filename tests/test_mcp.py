@@ -47,16 +47,26 @@ def test_tools_are_listed_with_strict_schemas():
     params = search.input_schema
     assert params["type"] == "object"
     assert params["additionalProperties"] is False
-    assert set(params["required"]) == {"origin", "destination", "depart_date"}
+    assert set(params["required"]) == {"origin", "destination"}
     assert params["properties"]["adults"]["default"] == 1
     assert params["properties"]["cabin"]["default"] == "economy"
     assert params["properties"]["currency"]["default"] == "CHF"
+    assert params["properties"]["flexibility_days"]["default"] == 0
+    assert params["properties"]["flexibility_days"]["maximum"] == 3
     assert params["properties"]["max_results"]["maximum"] == 20
     assert params["properties"]["adults"]["maximum"] == 9
+    assert "depart_from" in params["properties"]
+    assert "depart_to" in params["properties"]
+    assert "nights" in params["properties"]
     assert "economy" in params["properties"]["cabin"]["enum"]
     _assert_closed_objects(search.output_schema)
-    assert "price" in search.output_schema["$defs"]["Itinerary"]["properties"]
-    assert "flight_numbers" not in search.output_schema["$defs"]["Itinerary"]["properties"]
+    itinerary = search.output_schema["$defs"]["Itinerary"]["properties"]
+    assert "price" in itinerary
+    assert "flight_numbers" in itinerary
+    assert "layovers" in itinerary
+    assert "carry_on" in itinerary
+    assert "fare_family" in itinerary
+    assert "picks" in search.output_schema["properties"]
 
     resolve = tools["resolve_airports"]
     assert resolve.input_schema["additionalProperties"] is False
@@ -108,7 +118,12 @@ def test_search_defaults_and_structured_result(monkeypatch):
     assert body["flights"][0]["price"] == 108
     assert body["flights"][0]["airlines"] == ["SWISS"]
     assert body["flights"][0]["stops"] == 0
-    assert "flight_numbers" not in body["flights"][0]
+    assert body["flights"][0]["flight_numbers"] == ["LX1956"]
+    assert body["flights"][0]["carry_on"] == "unknown"
+    assert body["flights"][0]["checked_bag"] == "unknown"
+    assert body["flights"][0]["fare_family"] is None
+    assert body["picks"]["cheapest"] == body["flights"][0]["id"]
+    assert body["dates_searched"] == [day]
 
 
 def test_bad_arguments_and_extra_fields_are_rejected():
@@ -141,13 +156,24 @@ def test_bad_arguments_and_extra_fields_are_rejected():
                 "search_flights",
                 {"origin": "ZRH", "destination": "BCN", "depart_date": day, "currency": "XXX"},
             )
+            both = await client.call_tool(
+                "search_flights",
+                {
+                    "origin": "ZRH",
+                    "destination": "BCN",
+                    "depart_date": day,
+                    "depart_from": day,
+                    "depart_to": day,
+                },
+            )
             missing = await client.call_tool("resolve_airports", {"query": "Not A Real City Anywhere"})
-            return extra, adults, cabin, past, currency, missing
+            return extra, adults, cabin, past, currency, both, missing
 
-    extra, adults, cabin, past, currency, missing = _run(go())
-    for result in (extra, adults, cabin, past, currency, missing):
+    extra, adults, cabin, past, currency, both, missing = _run(go())
+    for result in (extra, adults, cabin, past, currency, both, missing):
         assert result.is_error is True
         assert result.structured_content is None
+    assert "invalid_input" in both.content[0].text
     assert "unknown_place" in missing.content[0].text
 
 

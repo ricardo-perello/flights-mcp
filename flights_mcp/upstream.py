@@ -1,16 +1,15 @@
 """One bounded request to public Google Flights pages.
 
-fast-flights builds the query and parses the page. This module only adds a
-hard timeout and refuses to keep the response body. Nothing is logged here.
+fast-flights builds the query. This module fetches the page and drops the
+body after parsing. Nothing is logged here.
 """
 
 from __future__ import annotations
 
-from typing import Any
-
 from fast_flights.exceptions import FlightsNotFound
-from fast_flights.parser import parse
 from fast_flights.querying import Query
+
+from flights_mcp.google_parse import ParsedItinerary, parse_html
 
 _SEARCH_URL = "https://www.google.com/travel/flights"
 _MAX_BODY_CHARS = 5_000_000
@@ -30,7 +29,7 @@ def _timeout_error(exc: BaseException) -> bool:
     return isinstance(exc, TimeoutError) or "timeout" in type(exc).__name__.lower()
 
 
-def fetch_results(query: Query, *, timeout_seconds: float) -> list[Any]:
+def fetch_results(query: Query, *, timeout_seconds: float) -> list[ParsedItinerary]:
     """Return parsed itineraries, or raise FlightsNotFound / UpstreamFailure.
 
     The response body is parsed and dropped. It is not logged and not attached
@@ -73,11 +72,11 @@ def fetch_results(query: Query, *, timeout_seconds: float) -> list[Any]:
         raise UpstreamFailure("upstream", "Google Flights response exceeded the size limit.")
 
     try:
-        parsed = parse(body)
+        parsed = parse_html(body)
     except FlightsNotFound:
         raise
     except Exception as exc:
         raise UpstreamFailure("upstream", "Could not read flight results from Google Flights.") from exc
     finally:
         del body
-    return list(parsed)
+    return parsed

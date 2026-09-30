@@ -30,12 +30,15 @@ drift on a casual reinstall. See `uv.lock`.
 - User input is not passed to a shell, a subprocess, or a URL path.
 - Place names are length-capped and control characters are rejected. Dates
   must be real calendar days from today (Europe/Zurich) through 330 days out.
-  Adults are 1–9. Results are capped at 20. The HTTP call itself times out
-  at 25 seconds.
-- Response bodies are parsed and discarded. Logs are one line: route, date,
-  result count, elapsed time, cache hit or miss, or an error code. They do
-  not include the page, the fare list, or anything that could later hide a
-  token if a backend is swapped in.
+  A date window searches at most 7 departure dates, sequentially, inside one
+  25 second budget. Adults are 1–9. Results are capped at 20.
+- Flight numbers and layover minutes are copied from the page payload when
+  those slots are present. Carry-on, checked bag, and fare family are not in
+  that payload, so the server reports them as unknown. It does not infer them
+  from legroom, numeric flags, or the fare amount.
+- Response bodies are parsed and discarded. Logs are one line: route, how
+  many dates, result count, elapsed time, cache hit or miss, or an error
+  code. They do not include the page, the fare list, or a booking token.
 - The airport database is the local `airportsdata` snapshot. Resolution does
   not open a socket.
 - The fare cache lives in the process only. It is not written to disk.

@@ -1,7 +1,7 @@
 [project]
 name = "flights-mcp"
-version = "1.0.0"
-description = "Local stdio MCP server for live public flight search. No API key."
+version = "1.1.0"
+description = "Local stdio MCP server for planning a trip from live public fares. No API key."
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.11"
